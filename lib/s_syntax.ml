@@ -1,5 +1,8 @@
 (** Core IR for source language S, in strict A-normal form (ANF). *)
 
+(* Defined here so the generated lexer/grammar can raise it; S_parser re-exports it. *)
+exception Parse_error of string
+
 type var = string
 type tag = string
 type prim = string

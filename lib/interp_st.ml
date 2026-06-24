@@ -1,4 +1,4 @@
-(** [I_S^T]: definitional interpreter for target language T, as an S program. *)
+(** [I_S^T]: the T interpreter written as a strict-ANF S program, parsed by {!S_parser}. *)
 
 let t_int = "Int"
 let t_var = "Var"
@@ -13,6 +13,7 @@ let t_env = "Env"
 let t_defs = "Defs"
 let t_prog = "Prog"
 
+(* Boolean constructors produced by the [iszero] primitive. *)
 let t_true = "True"
 let t_false = "False"
 
@@ -24,7 +25,7 @@ let f_extend = "extend"
 let arg_p = "p"
 let arg_arg = "arg"
 
-(* Transcribes main.tex:429-499. *)
+(* The five S functions + main, in strict-ANF surface syntax; transcribes main.tex:429-499. *)
 let source : string =
   Printf.sprintf
     {source|
@@ -33,7 +34,7 @@ def %s(defs, fid) =
   | %s(f, body, rest) ->
       match f with
       | %s(fid2) ->
-          let d = sub(fid, fid2) in
+          let d = fid - fid2 in
           let t = iszero(d) in
           match t with
           | %s() -> return body
@@ -49,7 +50,7 @@ def %s(env, xid) =
   | %s(x, val, rest) ->
       match x with
       | %s(l, xid2) ->
-          let d = sub(xid, xid2) in
+          let d = xid - xid2 in
           let t = iszero(d) in
           match t with
           | %s() -> return val
@@ -75,12 +76,12 @@ def %s(e, env, defs) =
   | %s(l, e1, e2) ->
       let v1 = %s(e1, env, defs) in
       let v2 = %s(e2, env, defs) in
-      let r = sub(v1, v2) in
+      let r = v1 - v2 in
       return r
   | %s(l, e1, e2) ->
       let v1 = %s(e1, env, defs) in
       let v2 = %s(e2, env, defs) in
-      let r = mul(v1, v2) in
+      let r = v1 * v2 in
       return r
   | %s(l, x, e1, e2) ->
       let v1 = %s(e1, env, defs) in
