@@ -1,0 +1,6 @@
+(library
+ (name retargeting))
+
+(ocamllex s_lexer)
+
+(ocamlyacc s_grammar)
