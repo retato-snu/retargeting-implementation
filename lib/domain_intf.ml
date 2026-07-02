@@ -1,14 +1,15 @@
-(** Value-domain interface that {!S_abstract.Make} is parameterized over. *)
+(** Value-domain interface for the partitioned abstract interpreter ({!S_abstract.Make}). *)
 
 module IntSet = Set.Make (Int)
 
-(* Abstract-integer lattice (paper A1): [⊥], a finite exact set, or [⊤]. *)
-type aint = ABot | AFin of IntSet.t | ATop
+(** Abstract-integer lattice (paper "Domain disambiguation", l.2000): graded powerset/interval. *)
+type aint = ABot | AFin of IntSet.t | AItv of int * int | ATop
 
+(** Allocation site: an internal program label or the external site. *)
 type site = Internal of Label.t | External
 
 module type DOMAIN = sig
-  type nonrec aint = aint = ABot | AFin of IntSet.t | ATop
+  type nonrec aint = aint = ABot | AFin of IntSet.t | AItv of int * int | ATop
 
   val aint_mem : int -> aint -> bool
 
@@ -28,11 +29,10 @@ module type DOMAIN = sig
 
   val has_tag : S_syntax.tag -> t -> bool
 
-  (* Per-site field tuples for a tag, or [None]; pure projection, no grammar GC. *)
   val fields : S_syntax.tag -> int -> t -> t list list option
 
   val root_int : t -> aint
 
-  (* γ-preserving GC: result denotes the same language as input (main.tex l.1532); identity up to γ. *)
+  (** γ-preserving GC: same denotation, minimal stored representation (main.tex l.1532). *)
   val gc : t -> t
 end

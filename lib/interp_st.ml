@@ -1,4 +1,4 @@
-(** [I_S^T]: the T interpreter written as a strict-ANF S program, parsed by {!S_parser}. *)
+(** [I_S^T]: a definitional interpreter for the target language T, written as an S program ({!S_syntax.program}); transcribes the paper's S-coded interpreter (main.tex l.356-435). *)
 
 let t_int = "Int"
 let t_var = "Var"
@@ -13,7 +13,6 @@ let t_env = "Env"
 let t_defs = "Defs"
 let t_prog = "Prog"
 
-(* Boolean constructors produced by the [iszero] primitive. *)
 let t_true = "True"
 let t_false = "False"
 
@@ -25,7 +24,7 @@ let f_extend = "extend"
 let arg_p = "p"
 let arg_arg = "arg"
 
-(* The five S functions + main, in strict-ANF surface syntax; transcribes main.tex:429-499. *)
+(** The five S functions ([eval], [lookup], [fundef], [extend]) and [main] in relaxed-ANF surface syntax, matching the paper's listing (main.tex l.356-435). *)
 let source : string =
   Printf.sprintf
     {source|
@@ -34,9 +33,7 @@ def %s(defs, fid) =
   | %s(f, body, rest) ->
       match f with
       | %s(fid2) ->
-          let d = fid - fid2 in
-          let t = iszero(d) in
-          match t with
+          match iszero(fid - fid2) with
           | %s() -> return body
           | %s() ->
               let r = %s(rest, fid) in
@@ -50,9 +47,7 @@ def %s(env, xid) =
   | %s(x, val, rest) ->
       match x with
       | %s(l, xid2) ->
-          let d = xid - xid2 in
-          let t = iszero(d) in
-          match t with
+          match iszero(xid - xid2) with
           | %s() -> return val
           | %s() ->
               let r = %s(rest, xid) in
@@ -94,15 +89,16 @@ def %s(e, env, defs) =
           let v = %s(e1, env, defs) in
           let body = %s(defs, fid) in
           let empty_env = %s() in
-          let x = %s(0, 0) in
+          let l0 = 0 in
+          let x0 = 0 in
+          let x = %s(l0, x0) in
           let call_env = %s(empty_env, x, v) in
           let r = %s(body, call_env, defs) in
           return r
       end
   | %s(l, e1, e2, e3) ->
       let v1 = %s(e1, env, defs) in
-      let t = iszero(v1) in
-      match t with
+      match iszero(v1) with
       | %s() ->
           let r = %s(e2, env, defs) in
           return r
@@ -116,7 +112,9 @@ main =
   match %s with
   | %s(defs, e) ->
       let empty_env = %s() in
-      let x = %s(0, 0) in
+      let l0 = 0 in
+      let x0 = 0 in
+      let x = %s(l0, x0) in
       let initial_env = %s(empty_env, x, %s) in
       let r = %s(e, initial_env, defs) in
       return r
@@ -135,8 +133,10 @@ main =
     t_ifz f_eval t_true f_eval t_false f_eval
     arg_p t_prog t_nil t_var f_extend arg_arg f_eval
 
+(** The interpreter [I_S^T] as a complete S program, obtained by parsing {!source}. *)
 let program : S_syntax.program = S_parser.parse source
 
+(** Evaluate a T program by running [I_S^T] on the concrete S machine. *)
 let eval_t ?(arg : T_encoding.value = 0) (p : T_encoding.program) :
     T_encoding.value =
   let encoded_p = T_encoding.enc_program p in

@@ -1,28 +1,24 @@
-(** Core IR for source language S, in strict A-normal form (ANF). *)
+(** S: core IR for the source language, in relaxed A-normal form (main.tex l.240-298). *)
 
-(* Defined here so the generated lexer/grammar can raise it; S_parser re-exports it. *)
 exception Parse_error of string
 
 type var = string
 type tag = string
 type prim = string
 
-type atom =
-  | AInt of int
-  | AVar of var
-
-type rhs =
-  | Atom of atom
-  | Prim of prim * atom list
+type exp =
+  | EInt of int
+  | EVar of var
+  | EPrim of prim * exp list (* o(ē) *)
+  | ETag of Label.t * tag * exp list (* T(ē); the Label.t is the allocation site *)
 
 type pat = PTag of tag * var list
 
 type cmd =
-  | Return of atom
-  | Let of var * rhs * Label.t
-  | LetCall of var * var * atom list * Label.t
-  | LetTag of var * tag * atom list * Label.t
-  | Match of atom * (pat * Label.t) list
+  | Return of exp
+  | Let of var * exp * Label.t
+  | LetCall of var * var * exp list * Label.t
+  | Match of exp * (pat * Label.t) list
 
 type fundef = { name : var; params : var list; entry : Label.t }
 

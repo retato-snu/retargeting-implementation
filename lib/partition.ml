@@ -1,13 +1,12 @@
-(** Frame partition index [φ̂] for the T-sensitive abstract interpretation of [I_S^T] (main.tex "State partitioning", ~l.992-1015). *)
+(** Frame partition index φ̂ for T-sensitive abstract interpretation (main.tex ~l.992-1015). *)
 
 type t = {
-  s_label : Label.t;
+  s_label : Label.t;  (** the current S command label *)
   t_label : Label.Set.t;
 }
 
 let make ~(s_label : Label.t) ~(t_label : Label.Set.t) : t = { s_label; t_label }
 
-(* The label extraction [lab] (main.tex ~l.1006-1014). *)
 let lab (p : t) : Label.t = p.s_label
 
 let compare (a : t) (b : t) : int =

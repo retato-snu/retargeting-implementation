@@ -1,6 +1,6 @@
 (library
  (name retargeting))
 
-(ocamllex s_lexer)
+(ocamllex t_lexer s_lexer)
 
-(ocamlyacc s_grammar)
+(ocamlyacc t_grammar s_grammar)

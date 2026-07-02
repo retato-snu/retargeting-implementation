@@ -1,7 +1,9 @@
-(** Concrete S -> T projection and its verification (main.tex:536-647, 1027-1038). *)
+(** Concrete S -> T projection at the level of machine states, with the macro-step bisimulation check (main.tex:536-612, 628-647, 1027-1038). *)
+
+(** {1 Interpreter points} *)
 
 module Points = struct
-  (* Continuation-frame role of an eval-call site — the paper's [β_ℓ] (main.tex:573-597). *)
+  (** The T continuation-frame role a recursive [eval] call site stands for (the paper's [β_ℓ], main.tex:573-597). *)
   type frame_kind =
     | FSub1 of S_syntax.var
     | FSub2 of S_syntax.var
@@ -14,11 +16,11 @@ module Points = struct
     | FSilent
 
   type t = {
-    eval_entry : Label.t;
-    eval_e : S_syntax.var;
-    eval_env : S_syntax.var;
-    ret_labels : (Label.t * S_syntax.var) list;  (* eval-return labels with returned var (main.tex:609) *)
-    call_frames : (Label.t * frame_kind) list;  (* eval-call labels with T frame role (main.tex:558) *)
+    eval_entry : Label.t;  (** eval-entry [match] label *)
+    eval_e : S_syntax.var;  (** [eval]'s expression parameter *)
+    eval_env : S_syntax.var;  (** [eval]'s environment parameter *)
+    ret_labels : (Label.t * S_syntax.var) list;
+    call_frames : (Label.t * frame_kind) list;
   }
 
   exception Extraction_error of string
@@ -36,10 +38,9 @@ module Points = struct
     | Some d -> d
     | None -> fail "interpreter does not define %s" name
 
-  let is_var (x : S_syntax.var) (a : S_syntax.atom) : bool =
-    match a with S_syntax.AVar y -> String.equal x y | _ -> false
+  let is_var (x : S_syntax.var) (a : S_syntax.exp) : bool =
+    match a with S_syntax.EVar y -> String.equal x y | _ -> false
 
-  (* A recursive [eval(sub, env, defs)] call site, returning its label and continuation (main.tex:569). *)
   let as_eval_call (env : S_syntax.var) (defs : S_syntax.var)
       (sub : S_syntax.var) (l : Label.t) : (Label.t * Label.t) option =
     match cmd_at l with
@@ -56,7 +57,7 @@ module Points = struct
 
   let expect_return ctx l =
     match cmd_at l with
-    | S_syntax.Return (S_syntax.AVar r) -> (l, r)
+    | S_syntax.Return (S_syntax.EVar r) -> (l, r)
     | _ -> fail "%s: expected a return command" ctx
 
   let branch tag branches =
@@ -68,13 +69,11 @@ module Points = struct
     | Some (S_syntax.PTag (_, vars), l) -> (vars, l)
     | None -> fail "missing %s branch" tag
 
-  (* The eval entry must be a [match] on the [e] parameter. *)
   let eval_branches (eval : S_syntax.fundef) (e : S_syntax.var) =
     match cmd_at eval.S_syntax.entry with
     | S_syntax.Match (a, branches) when is_var e a -> branches
     | _ -> fail "eval body must match its expression parameter"
 
-  (* Extract every interpreter point structurally from the interpreter program. *)
   let extract () : t =
     let eval = find_fun Interp_st.f_eval in
     let e, env, defs =
@@ -89,7 +88,6 @@ module Points = struct
     let add_ret r = rets := r :: !rets in
     let add_call c = calls := c :: !calls in
 
-    (* Int(l, n) => let r = n in return r. *)
     let () =
       let vars, body = branch T_encoding.tag_int branches in
       (match vars with
@@ -101,7 +99,6 @@ module Points = struct
       | _ -> fail "Int branch must bind the result then return it"
     in
 
-    (* Var(l, xid) => let r = lookup(env, xid) in return r; lookup is auxiliary, pushes no frame. *)
     let () =
       let _vars, body = branch T_encoding.tag_var branches in
       match cmd_at body with
@@ -110,7 +107,6 @@ module Points = struct
       | _ -> fail "Var branch must call lookup then return"
     in
 
-    (* Binary(l, e1, e2) => eval(e1); eval(e2); r = op(v1, v2); return r. *)
     let binary tag op fk1 fk2 =
       let vars, body = branch tag branches in
       let _l, e1, e2 =
@@ -128,7 +124,7 @@ module Points = struct
       in
       add_call (call2, fk2 v1);
       match cmd_at after2 with
-      | S_syntax.Let (r, S_syntax.Prim (o, _), k) when String.equal o op ->
+      | S_syntax.Let (r, S_syntax.EPrim (o, _), k) when String.equal o op ->
           add_ret (expect_return (tag ^ " return") k);
           ignore r
       | _ -> fail "%s branch must apply %s then return" tag op
@@ -136,7 +132,6 @@ module Points = struct
     binary T_encoding.tag_sub "sub" (fun e2 -> FSub1 e2) (fun v1 -> FSub2 v1);
     binary T_encoding.tag_mul "mul" (fun e2 -> FMul1 e2) (fun v1 -> FMul2 v1);
 
-    (* Let(l, x, e1, e2) => eval(e1) [Let frame]; extend (aux); eval(e2, new_env) [Restore frame]; return. *)
     let () =
       let vars, body = branch T_encoding.tag_let branches in
       let x, e1, e2 =
@@ -166,7 +161,6 @@ module Points = struct
       ignore (expect_return "Let return" after2 |> add_ret)
     in
 
-    (* App(l, f, e1) => match Fun(fid); eval(e1) [App frame]; fundef/extend (aux); eval(body) [Restore frame]; return. *)
     let () =
       let vars, app_body = branch T_encoding.tag_app branches in
       let fvar, e1 =
@@ -183,7 +177,6 @@ module Points = struct
       in
       let call1, after1 = expect_eval_call "App argument" env defs e1 fun_body in
       add_call (call1, FApp fvar);
-      (* Skip auxiliary calls building the callee env until the body eval call. *)
       let rec find_body_call l =
         match cmd_at l with
         | S_syntax.LetCall (_, f, [ a0; a1; a2 ], next)
@@ -191,8 +184,7 @@ module Points = struct
             ignore (a0, a1);
             (l, next)
         | S_syntax.Let (_, _, k)
-        | S_syntax.LetCall (_, _, _, k)
-        | S_syntax.LetTag (_, _, _, k) ->
+        | S_syntax.LetCall (_, _, _, k) ->
             find_body_call k
         | _ -> fail "App branch must evaluate the function body"
       in
@@ -201,7 +193,6 @@ module Points = struct
       ignore (expect_return "App return" after2 |> add_ret)
     in
 
-    (* Ifz(l, e1, e2, e3) => eval(e1) [Ifz frame]; match iszero; each branch eval [Silent frame]; return. *)
     let () =
       let vars, body = branch T_encoding.tag_ifz branches in
       let e1, e2, e3 =
@@ -213,11 +204,8 @@ module Points = struct
       add_call (call1, FIfz (e2, e3));
       let bool_branches =
         match cmd_at after1 with
-        | S_syntax.Let (_, S_syntax.Prim ("iszero", _), k) -> (
-            match cmd_at k with
-            | S_syntax.Match (_, bbranches) -> bbranches
-            | _ -> fail "Ifz branch must match iszero")
-        | _ -> fail "Ifz branch must test the scrutinee with iszero"
+        | S_syntax.Match (S_syntax.EPrim ("iszero", _), bbranches) -> bbranches
+        | _ -> fail "Ifz branch must match iszero(v1) directly"
       in
       let branch_call ctx sub bbranch_tag =
         let _vars, bbody = branch bbranch_tag bool_branches in
@@ -251,7 +239,7 @@ module Points = struct
     Label.equal l p.eval_entry || ret_var p l <> None
 end
 
-(* State decoding: the paper's [⌊·⌋] from observed S states to T states (main.tex:605-612). *)
+(** {1 State decoding} *)
 
 module Decode = struct
   exception Project_error of string
@@ -273,7 +261,7 @@ module Decode = struct
     | S_cek.VInt n -> n
     | S_cek.VTag (t, _) -> fail "%s: expected an integer, got tag %s" ctx t
 
-  (* Decode an S frame to a T frame; auxiliary/root frames decode to [None] (main.tex:558, 616-619). *)
+  (* Auxiliary and root frames (non-eval-calls) decode to [None] (main.tex:558, 616-619). *)
   let frame (p : Points.t) (fr : S_cek.frame) : T_machine.frame option =
     match Points.frame_kind p fr.S_cek.suspended with
     | None -> None
@@ -298,10 +286,10 @@ module Decode = struct
         in
         Some f
 
+  (* Order preserved: both continuations are innermost-frame-first. *)
   let kont (p : Points.t) (k : S_cek.kont) : T_machine.kont =
     List.filter_map (frame p) k
 
-  (* Decode an observed S state to a T state; [None] for unobserved states. *)
   let state (p : Points.t) (s : S_cek.state) : T_machine.state option =
     if Label.equal s.S_cek.label p.Points.eval_entry then
       Some
@@ -323,7 +311,9 @@ module Decode = struct
             }
 end
 
-(* Run [I_S^T] on encoded [prog], capturing the full S state trace including the final state. *)
+(** {1 S trace capture} *)
+
+(** Full sequence of S states from running [I_S^T] on the encoded program [prog]. *)
 let s_trace ?(fuel = 1_000_000) ?(arg : T_encoding.value = 0)
     (prog : T_encoding.program) : S_cek.state list =
   let env =
@@ -341,6 +331,9 @@ let s_trace ?(fuel = 1_000_000) ?(arg : T_encoding.value = 0)
   in
   loop fuel init []
 
+(** {1 Projected trace} *)
+
+(** The projected T trace: definition table plus decoded T states at observed points. *)
 type projected = { defs : T_encoding.defs; states : T_machine.state list }
 
 let points : Points.t = Points.extract ()
@@ -353,17 +346,19 @@ let project ?(fuel = 1_000_000) ?(arg : T_encoding.value = 0)
   let trace = s_trace ~fuel ~arg prog in
   { defs = prog.T_encoding.defs; states = project_states trace }
 
+(** {1 Verification} *)
+
 type result =
-  | Valid
-  | Empty
+  | Valid  (** every consecutive pair is connected by one {!T_machine.step} *)
+  | Empty  (** the projected trace had no observed states *)
   | Mismatch of {
-      index : int;
-      from_state : T_machine.state;
-      expected : T_machine.state option;  (* [None] if [from_state] steps to a final value *)
-      got : T_machine.state;
+      index : int;  (** the position of the offending state in the trace *)
+      from_state : T_machine.state;  (** the decoded state to step from *)
+      expected : T_machine.state option;
+      got : T_machine.state;  (** the next decoded state in the projected trace *)
     }
 
-(* Verify each consecutive decoded pair is one [T_machine.step]: macro-step bisimulation (main.tex:1027-1038). *)
+(** Verify a projected T trace is a valid T-machine run: one {!T_machine.step} per consecutive pair — the executable macro-step bisimulation (main.tex:1027-1038). *)
 let verify (pr : projected) : result =
   let arr = Array.of_list pr.states in
   let n = Array.length arr in
@@ -388,7 +383,8 @@ let verify_program ?(fuel = 1_000_000) ?(arg : T_encoding.value = 0)
     (prog : T_encoding.program) : result =
   verify (project ~fuel ~arg prog)
 
-(* Cross-check: the projected T trace should equal the T machine's own state sequence. *)
+(** {1 Cross-check against the T machine's own run} *)
+
 let t_trace ?(fuel = 1_000_000) ?(arg : T_encoding.value = 0)
     (prog : T_encoding.program) : T_machine.state list =
   let init = T_machine.inject ~arg prog in

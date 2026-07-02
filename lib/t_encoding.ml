@@ -34,7 +34,7 @@ let tag_env = "Env"
 let tag_defs = "Defs"
 let tag_prog = "Prog"
 
-(* Placeholder label for a binder's [Var] wrapper; decode drops it, so any value round-trips. *)
+(** Placeholder label for a binder's [Var] wrapper; decode drops it, so any value round-trips. *)
 let binder_label : Label.t = 0
 
 let enc_label (l : Label.t) : S_cek.value = S_cek.VInt l
@@ -89,7 +89,6 @@ let dec_int (ctx : string) (v : S_cek.value) : int =
 
 let dec_label (ctx : string) (v : S_cek.value) : Label.t = dec_int ctx v
 
-(* Binder/key id decodes from [Var(label, xid)], dropping the label. *)
 let dec_var_id (ctx : string) (v : S_cek.value) : var_id =
   match v with
   | S_cek.VTag (t, [ _label; xid ]) when String.equal t tag_var ->

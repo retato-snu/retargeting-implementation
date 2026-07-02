@@ -1,4 +1,4 @@
-(** Concrete S C_aEK machine: executable reference semantics for the S core language. *)
+(** Concrete S CEK machine: executable reference semantics for the core S. In (relaxed) A-normal form the control is a command label, and only calls transfer control. *)
 
 type value =
   | VInt of int
@@ -8,7 +8,7 @@ module Env = Map.Make (String)
 
 type env = value Env.t
 
-(* A frame is the suspended LetCall's label plus the env to restore on return. *)
+(** A frame is (suspended label, saved env); the suspended command is always the [LetCall] that pushed it, and S-Return reads its [var]/[label]. *)
 type frame = { suspended : Label.t; saved_env : env }
 
 type kont = frame list
@@ -23,11 +23,6 @@ let lookup (rho : env) (x : S_syntax.var) : value =
   match Env.find_opt x rho with
   | Some v -> v
   | None -> stuck "unbound variable %s" x
-
-let eval_atom (a : S_syntax.atom) (rho : env) : value =
-  match a with
-  | S_syntax.AInt n -> VInt n
-  | S_syntax.AVar x -> lookup rho x
 
 let eval_prim (o : S_syntax.prim) (args : value list) : value =
   let as_int op idx = function
@@ -52,10 +47,13 @@ let eval_prim (o : S_syntax.prim) (args : value list) : value =
             (List.length args))
   | _ -> stuck "unknown primitive %s" o
 
-let eval_rhs (r : S_syntax.rhs) (rho : env) : value =
-  match r with
-  | S_syntax.Atom a -> eval_atom a rho
-  | S_syntax.Prim (o, args) -> eval_prim o (List.map (fun a -> eval_atom a rho) args)
+(** Evaluate an expression in an environment (the paper's [eval e ρ], main.tex l.289-298). *)
+let rec eval_exp (e : S_syntax.exp) (rho : env) : value =
+  match e with
+  | S_syntax.EInt n -> VInt n
+  | S_syntax.EVar x -> lookup rho x
+  | S_syntax.EPrim (o, es) -> eval_prim o (List.map (fun e -> eval_exp e rho) es)
+  | S_syntax.ETag (_site, t, es) -> VTag (t, List.map (fun e -> eval_exp e rho) es)
 
 type step_result =
   | Next of state
@@ -64,7 +62,7 @@ type step_result =
 let rec step (p : S_syntax.program) (s : state) : step_result =
   match S_syntax.cmd_at p s.label with
   | S_syntax.Return a -> (
-      let v = eval_atom a s.env in
+      let v = eval_exp a s.env in
       match s.kont with
       | [] -> Done v
       | { suspended; saved_env } :: rest -> (
@@ -75,15 +73,15 @@ let rec step (p : S_syntax.program) (s : state) : step_result =
               stuck
                 "S-Return: continuation frame does not suspend a LetCall (%s)"
                 (cmd_name other)))
-  | S_syntax.Let (x, r, l) ->
-      let v = eval_rhs r s.env in
+  | S_syntax.Let (x, e, l) ->
+      let v = eval_exp e s.env in
       Next { label = l; env = Env.add x v s.env; kont = s.kont }
   | S_syntax.LetCall (_x, f, args, _l) -> (
-      (* [_x]/[_l] are recovered later by S-Return from the suspended label, not consumed here. *)
+      (* [_x] and [_l] are recovered later by S-Return from the suspended label, not consumed at call time. *)
       match find_fun p f with
       | None -> stuck "LetCall: undefined function %s" f
       | Some def ->
-          let arg_vals = List.map (fun a -> eval_atom a s.env) args in
+          let arg_vals = List.map (fun a -> eval_exp a s.env) args in
           let callee_env =
             try
               List.fold_left2
@@ -101,12 +99,8 @@ let rec step (p : S_syntax.program) (s : state) : step_result =
               env = callee_env;
               kont = frame :: s.kont;
             })
-  | S_syntax.LetTag (x, t, args, l) ->
-      let arg_vals = List.map (fun a -> eval_atom a s.env) args in
-      let v = VTag (t, arg_vals) in
-      Next { label = l; env = Env.add x v s.env; kont = s.kont }
   | S_syntax.Match (a, branches) -> (
-      match eval_atom a s.env with
+      match eval_exp a s.env with
       | VInt n -> stuck "Match: scrutinee is an integer (%d), not a tag" n
       | VTag (t, vs) -> (
           match select_branch t vs branches with
@@ -121,7 +115,6 @@ and find_fun (p : S_syntax.program) (f : S_syntax.var) :
     S_syntax.fundef option =
   List.find_opt (fun d -> String.equal d.S_syntax.name f) p.S_syntax.funs
 
-(* No wildcard: a value whose tag matches no branch leaves the machine stuck. *)
 and select_branch (t : S_syntax.tag) (vs : value list)
     (branches : (S_syntax.pat * Label.t) list) :
     ((S_syntax.var * value) list * Label.t) option =
@@ -137,7 +130,6 @@ and cmd_name (c : S_syntax.cmd) : string =
   | S_syntax.Return _ -> "Return"
   | S_syntax.Let _ -> "Let"
   | S_syntax.LetCall _ -> "LetCall"
-  | S_syntax.LetTag _ -> "LetTag"
   | S_syntax.Match _ -> "Match"
 
 let inject ?(env = Env.empty) (p : S_syntax.program) : state =

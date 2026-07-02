@@ -1,7 +1,8 @@
-(** Target language T's abstract machine, calculated from {!Interp_st}. *)
+(** T's abstract machine, transcribed from the paper's calculated T-machine; runs directly on the T abstract syntax of {!T_encoding}. *)
 
 open T_encoding
 
+(* Arithmetic/conditional frames carry no env: the right operand/branch runs under the current env, sound by well-bracketedness; only [Let]/[App] save and restore it via [Restore]. *)
 type frame =
   | Sub1 of expr
   | Sub2 of value
@@ -10,7 +11,7 @@ type frame =
   | Let of var_id * expr
   | App of fun_id
   | Ifz of expr * expr
-  | Restore of env  (* reinstate saved env on return, for Let and App *)
+  | Restore of env
   | Silent
 
 type kont = frame list
@@ -35,7 +36,7 @@ let fundef (ds : defs) (f : fun_id) : expr =
   | Some body -> body
   | None -> stuck "undefined function %d" f
 
-(* implicit single parameter id, the paper's x_arg *)
+(** The implicit single parameter id, the paper's [x_arg]. *)
 let x_arg : var_id = 0
 
 type step_result =
@@ -61,7 +62,6 @@ let step (defs : defs) (s : state) : step_result =
   | Value n -> (
       match s.kont with
       | [] -> Done n
-      (* right operand evaluated under current env; no env saved (well-bracketed) *)
       | Sub1 e2 :: rest ->
           Next { s with control = Expr e2; kont = Sub2 n :: rest }
       | Sub2 n1 :: rest -> Next { s with control = Value (n1 - n); kont = rest }
@@ -75,7 +75,6 @@ let step (defs : defs) (s : state) : step_result =
               env = (x, n) :: s.env;
               kont = Restore s.env :: rest;
             }
-      (* enter D(f) with fresh env [x_arg -> n]; save caller env *)
       | App f :: rest ->
           Next
             {

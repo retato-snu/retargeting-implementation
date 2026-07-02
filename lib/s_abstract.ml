@@ -1,8 +1,9 @@
 (** Generic partitioned abstract interpreter for the S core language (main.tex ~l.990-1379). *)
+
 module Make (D : Domain_intf.DOMAIN) = struct
 module Env = Map.Make (String)
 
-(* bottom-strict: a bound variable is never bound to bottom (see aenv_add) *)
+(** An abstract environment: S variables to abstract values; bottom-strict (see aenv_add). *)
 type aenv = D.t Env.t
 
 let aenv_empty : aenv = Env.empty
@@ -10,7 +11,7 @@ let aenv_empty : aenv = Env.empty
 let aenv_find (rho : aenv) (x : S_syntax.var) : D.t =
   match Env.find_opt x rho with Some v -> v | None -> D.bottom
 
-(* bottom-strict: binding to bottom removes the var, since unbound reads as bottom (main.tex ~l.1086) *)
+(** Bind [x] to [v]; bottom-strict: a bottom binding is removed (main.tex ~l.1086). *)
 let aenv_add (x : S_syntax.var) (v : D.t) (rho : aenv) : aenv =
   if D.is_bottom v then Env.remove x rho else Env.add x v rho
 
@@ -32,15 +33,14 @@ let aenv_widen (a : aenv) (b : aenv) : aenv =
       | Some v1, Some v2 -> Some (D.widen v1 v2))
     a b
 
+(** Pointwise order (missing bindings read as bottom); the [v == bv] identity fast path is sound. *)
 let aenv_leq (a : aenv) (b : aenv) : bool =
   Env.for_all
     (fun x v ->
       let bv = aenv_find b x in
-      (* [v == bv] is a sound fast path: physically-equal values satisfy [v ⊑ v] *)
       v == bv || D.leq v bv)
     a
 
-(* [κ̂ : Kont ::= {• | π̂}], [π̂ : Part ::= ⟨φ̂, κ̂⟩] (main.tex ~l.1075-1082) *)
 type kelem = KEmpty | KPart of part
 
 and part = { pphi : Partition.t; pkont : kont }
@@ -75,6 +75,7 @@ let kont_union (a : kont) (b : kont) : kont = List.fold_left (fun acc e -> kont_
 let kont_inter (a : kont) (b : kont) : kont =
   List.filter (fun e -> List.exists (fun e' -> compare_kelem e e' = 0) b) a
 
+(** Is the kont-set empty? A bound entry must have a non-empty continuation (bottom-strict). *)
 let kont_is_empty (k : kont) : bool = k = []
 
 let string_of_kelem_short (e : kelem) : string =
@@ -85,11 +86,11 @@ let string_of_kelem_short (e : kelem) : string =
 let string_of_kont (k : kont) : string =
   "{" ^ String.concat "," (List.map string_of_kelem_short k) ^ "}"
 
-(* finite-push: truncates the inner continuation to [{•}], bounding reachable parts (main.tex ~l.1029-1041) *)
+(** The finite abstract push [pushk φ̂ _ = {⟨φ̂,{•}⟩}]; truncation bounds reachable parts (main.tex ~l.1029-1041). *)
 let pushk (phi : Partition.t) (_k : kont) : kont =
   [ KPart { pphi = phi; pkont = kont_halt } ]
 
-(* [pusĥ⁻¹(κ̂')]: the write-back filter [κ̂' ∩ pusĥ⁻¹(κ̂')] (main.tex ~l.1323) *)
+(** [pusĥ⁻¹(κ̂')]: keep the well-formed pushed elements of [κ̂'] (write-back filter, main.tex ~l.1323). *)
 let push_inv (k : kont) : kont =
   List.filter
     (fun e ->
@@ -168,6 +169,7 @@ let index_of_state (is_return : Partition.t -> bool) (sigma : state) : index =
     sigma;
   idx
 
+(** A handle: the S program plus the read-only facts the abstract step needs. *)
 type handle = {
   prog : S_syntax.program;
   eval_entry : Label.t;
@@ -176,7 +178,7 @@ type handle = {
   in_scope : S_syntax.var list Label.Map.t;
 }
 
-(* support of the [env : Frame → Env] map (main.tex ~l.1017-1027) *)
+(** May-be-bound in-scope analysis: the support of the [env : Frame → Env] map (main.tex ~l.1017-1027). *)
 let compute_in_scope (prog : S_syntax.program)
     (seed_vars : (Label.t * S_syntax.var list) list) :
     S_syntax.var list Label.Map.t =
@@ -200,7 +202,6 @@ let compute_in_scope (prog : S_syntax.program)
     | S_syntax.Let (x, _, k) -> [ (k, SS.add x bound) ]
     | S_syntax.LetCall (_, _, _, _) ->
         []
-    | S_syntax.LetTag (x, _, _, k) -> [ (k, SS.add x bound) ]
     | S_syntax.Match (_, branches) ->
         List.map
           (fun (S_syntax.PTag (_, vars), k) ->
@@ -236,10 +237,11 @@ let compute_in_scope (prog : S_syntax.program)
 let in_scope_at (h : handle) (l : Label.t) : S_syntax.var list =
   match Label.Map.find_opt l h.in_scope with Some vs -> vs | None -> []
 
+(** The [env : Frame → Env] map, as its support: the in-scope variables at [lab(φ̂)] (main.tex ~l.1017-1027). *)
 let env_of_frame (h : handle) (phi : Partition.t) : string list =
   in_scope_at h (Partition.lab phi)
 
-(* the indexed write-back's [ρ̂' ⊓ env(φ̂')] (main.tex ~l.1322) *)
+(** The write-back's [ρ̂' ⊓ env(φ̂')]: restrict [rho]'s domain to the in-scope variables (main.tex ~l.1322). *)
 let aenv_meet_scope (rho : aenv) (scope : string list) : aenv =
   let module SS = Set.Make (String) in
   let keep = SS.of_list scope in
@@ -263,17 +265,35 @@ let handle_for_interp () : handle =
         [ (Interp_st.program.S_syntax.main, [ Interp_st.arg_p; Interp_st.arg_arg ]) ];
   }
 
-(* abstract expression evaluation [eval#] (main.tex ~l.1152-1184) *)
-let abs_atom (rho : aenv) (a : S_syntax.atom) : D.t =
-  match a with
-  | S_syntax.AInt n -> D.int_lit n
-  | S_syntax.AVar x -> aenv_find rho x
+(** Build a handle for a direct S program: [eval_entry = -1] sentinel makes the frame index degenerate to the S label. *)
+let handle_for_program (prog : S_syntax.program) : handle =
+  {
+    prog;
+    eval_entry = -1;
+    eval_e = "";
+    eval_call_labels = Label.Set.empty;
+    in_scope = compute_in_scope prog [ (prog.S_syntax.main, []) ];
+  }
 
-(* [None] flags an uninterpreted (stuck) primitive: contributes no successor (sound) *)
-let abs_rhs (rho : aenv) (r : S_syntax.rhs) : D.t option =
-  match r with
-  | S_syntax.Atom a -> Some (abs_atom rho a)
-  | S_syntax.Prim (o, args) -> D.prim o (List.map (abs_atom rho) args)
+(** Abstract expression evaluation [eval#] (main.tex ~l.1152-1184); [None] = the domain is stuck. *)
+let rec abs_exp (rho : aenv) (e : S_syntax.exp) : D.t option =
+  match e with
+  | S_syntax.EInt n -> Some (D.int_lit n)
+  | S_syntax.EVar x -> Some (aenv_find rho x)
+  | S_syntax.EPrim (o, es) -> (
+      match abs_exps rho es with Some vs -> D.prim o vs | None -> None)
+  | S_syntax.ETag (site, t, es) -> (
+      match abs_exps rho es with
+      | Some vs -> Some (D.tag (D.Internal site) t vs)
+      | None -> None)
+
+and abs_exps (rho : aenv) (es : S_syntax.exp list) : D.t list option =
+  List.fold_right
+    (fun e acc ->
+      match (abs_exp rho e, acc) with
+      | Some v, Some vs -> Some (v :: vs)
+      | _ -> None)
+    es (Some [])
 
 let t_labels_of_value (v : D.t) : Label.Set.t =
   let expr_tags =
@@ -291,7 +311,7 @@ let t_labels_of_value (v : D.t) : Label.Set.t =
     match D.root_int field0 with
     | D.AFin s ->
         Domain_intf.IntSet.fold (fun n acc -> Label.Set.add n acc) s acc
-    | D.ABot | D.ATop -> acc
+    | D.AItv _ | D.ABot | D.ATop -> acc
   in
   List.fold_left
     (fun acc (tag, arity) ->
@@ -306,14 +326,12 @@ let t_labels_of_value (v : D.t) : Label.Set.t =
       else acc)
     Label.Set.empty expr_tags
 
+(** Build the frame index of a successor; a coarser/empty t_label loses precision, not soundness (main.tex l.1547-1558). *)
 let partition_of (h : handle) (l : Label.t) (rho : aenv) : Partition.t =
-  let t_label =
-    if Label.equal l h.eval_entry then t_labels_of_value (aenv_find rho h.eval_e)
-    else Label.Set.empty
-  in
+  let _ = Label.equal l h.eval_entry in
+  let t_label = t_labels_of_value (aenv_find rho h.eval_e) in
   Partition.make ~s_label:l ~t_label
 
-(* view-indexed abstract step: [AbsLetExp]/[AbsLetCall]/[AbsReturn]/[AbsMatch] (main.tex ~l.1198-1278) *)
 type succ = Key.t * aenv * kont
 
 let find_fun (h : handle) (f : S_syntax.var) : S_syntax.fundef option =
@@ -326,8 +344,10 @@ let step_entry ?(idx : index option) (h : handle) (sigma : state)
   let l = Partition.lab phi in
   match S_syntax.cmd_at h.prog l with
   | S_syntax.Return a ->
-      (* AbsReturn (main.tex ~l.1231-1257), realized under the finite push: resume into every entry stored at φ̂_c *)
-      let v = abs_atom rho a in
+      (* [AbsReturn] (main.tex ~l.1231-1257): resume into every entry at each stored caller frame [φ̂_c]. *)
+      (match abs_exp rho a with
+      | None -> []
+      | Some v ->
       let resume_at phi_c x cont =
         match idx with
         | Some idx ->
@@ -359,41 +379,38 @@ let step_entry ?(idx : index option) (h : handle) (sigma : state)
               match S_syntax.cmd_at h.prog (Partition.lab phi_c) with
               | S_syntax.LetCall (x, _f, _args, cont) -> resume_at phi_c x cont
               | _ -> []))
-        kont
+        kont)
   | S_syntax.Let (x, r, cont) -> (
-      (* AbsLetExp (main.tex ~l.1198-1214) *)
-      match abs_rhs rho r with
+      (* [AbsLetExp] (main.tex ~l.1198-1214): bind [x] to the abstracted RHS, continue at [cont]. *)
+      match abs_exp rho r with
       | None -> []
       | Some v ->
           let rho' = aenv_add x v rho in
           let phi' = partition_of h cont rho' in
           [ ((phi', k), rho', kont) ])
   | S_syntax.LetCall (_x, f, args, _cont) -> (
-      (* AbsLetCall (main.tex ~l.1216-1229), posting the finite [pusĥ(φ̂, κ̂)] *)
+      (* [AbsLetCall] (main.tex ~l.1216-1229): bind the callee's formals, post the finite [pushk φ̂ κ̂]. *)
       match find_fun h f with
       | None -> []
-      | Some def ->
-          let arg_vals = List.map (abs_atom rho) args in
-          if List.length def.S_syntax.params <> List.length arg_vals then []
-          else
-            let callee_rho =
-              List.fold_left2
-                (fun e param v -> aenv_add param v e)
-                aenv_empty def.S_syntax.params arg_vals
-            in
-            let callee_kont = pushk phi kont in
-            let phi' = partition_of h def.S_syntax.entry callee_rho in
-            [ ((phi', callee_kont), callee_rho, callee_kont) ])
-  | S_syntax.LetTag (x, t, args, cont) ->
-      (* AbsLetTag: allocate a tagged value at this command's label as the allocation site *)
-      let arg_vals = List.map (abs_atom rho) args in
-      let v = D.tag (D.Internal l) t arg_vals in
-      let rho' = aenv_add x v rho in
-      let phi' = partition_of h cont rho' in
-      [ ((phi', k), rho', kont) ]
-  | S_syntax.Match (a, branches) ->
-      (* AbsMatch (main.tex ~l.1259-1278): one successor per tuple in [fields#_T(tag, arity, scrut)] *)
-      let scrut = abs_atom rho a in
+      | Some def -> (
+          match abs_exps rho args with
+          | None -> []
+          | Some arg_vals ->
+              if List.length def.S_syntax.params <> List.length arg_vals then []
+              else
+                let callee_rho =
+                  List.fold_left2
+                    (fun e param v -> aenv_add param v e)
+                    aenv_empty def.S_syntax.params arg_vals
+                in
+                let callee_kont = pushk phi kont in
+                let phi' = partition_of h def.S_syntax.entry callee_rho in
+                [ ((phi', callee_kont), callee_rho, callee_kont) ]))
+  | S_syntax.Match (a, branches) -> (
+      (* [AbsMatch] (main.tex ~l.1259-1278): one successor per per-site tuple of a possible branch tag. *)
+      match abs_exp rho a with
+      | None -> []
+      | Some scrut ->
       List.concat_map
         (fun (S_syntax.PTag (tag, vars), cont) ->
           let arity = List.length vars in
@@ -403,7 +420,7 @@ let step_entry ?(idx : index option) (h : handle) (sigma : state)
                 List.filter_map
                   (fun tuple ->
                     if List.length tuple = arity then
-                      (* GC the projected field grammar before storing (main.tex l.1532) *)
+                      (* GC each projected field's grammar as it is stored (main.tex l.1532). *)
                       let rho' =
                         List.fold_left2
                           (fun e y v -> aenv_add y (D.gc v) e)
@@ -415,17 +432,15 @@ let step_entry ?(idx : index option) (h : handle) (sigma : state)
                   tuples
             | None -> []
           else [])
-        branches
+        branches)
 
-(* worklist fixpoint of the full transfer function (main.tex ~l.1329-1374) *)
-
-(* indexed write-back refinement [⊓ env(φ̂')], [∩ pusĥ⁻¹(κ̂')] (main.tex AbsStep ~l.1287-1327) *)
+(** The write-back refinement of a raw successor: [⊓ env(φ̂')] and [∩ pusĥ⁻¹(κ̂')] (main.tex ~l.1287-1327). *)
 let refine_succ (h : handle) (((phi', k'), rho', kont') : succ) : succ =
   let rho_ref = aenv_meet_scope rho' (env_of_frame h phi') in
   let kont_ref = kont_inter kont' (push_inv k') in
   ((phi', k'), rho_ref, kont_ref)
 
-(* reverse edge: re-process every Return entry whose continuation names a grown caller frame [φ̂_c] *)
+(** Keys to recompute after [key] grew: [key], plus [Return] entries returning into a grown caller frame. *)
 let is_caller_key (h : handle) ((phi, _) : Key.t) : bool =
   match S_syntax.cmd_at h.prog (Partition.lab phi) with
   | S_syntax.LetCall _ -> true
@@ -455,6 +470,7 @@ let dependents ?(idx : index option) (h : handle) (sigma : state) (key : Key.t) 
           sigma [ key ]
   else [ key ]
 
+(** Join (or widen on re-visit) a refined successor into the table; bottom-strict (empty env and kont adds nothing). *)
 let update ?(idx : index option) (sigma : state) (((key, rho, kont) : succ)) :
     state * bool =
   if Env.is_empty rho && kont_is_empty kont then (sigma, false)
@@ -466,7 +482,6 @@ let update ?(idx : index option) (sigma : state) (((key, rho, kont) : succ)) :
         | None -> ());
         (Table.add key { rho; kont } sigma, true)
     | Some old ->
-        (* growth-detection fast path: [¬(rho ⊑ old.rho)] is equivalent to the unfused widen but avoids materializing it *)
         let grew_rho = not (aenv_leq rho old.rho) in
         let new_kont = kont_union old.kont kont in
         let grew_kont = compare_kont new_kont old.kont <> 0 in
@@ -480,7 +495,7 @@ let update ?(idx : index option) (sigma : state) (((key, rho, kont) : succ)) :
           (Table.add key { rho = widened_rho; kont = new_kont } sigma, true)
         end
 
-(* [max_steps] is a defensive guard, never the binding limit (finiteness + widening terminate) *)
+(** Run the worklist to the least-fixpoint table; [max_steps] is a defensive guard, never the binding limit. *)
 let solve ?(max_steps = 5_000_000) (h : handle) (init : state) : state =
   let module KeySet = Set.Make (Key) in
   let idx =
@@ -528,9 +543,10 @@ type analysis = { table : state; result : D.t }
 let initial_env (encoded_p : D.t) (arg : D.t) : aenv =
   aenv_add Interp_st.arg_p encoded_p (aenv_add Interp_st.arg_arg arg aenv_empty)
 
-(* kept well above interpreter command labels so input-node sites never collide with interpreter [LetTag] sites *)
+(** Base offset for input-value allocation sites; kept above interpreter labels to avoid site collisions. *)
 let input_site_base = 1_000_000
 
+(** Abstract a concrete S value: a fresh allocation site per node gives a precise finite tree grammar. *)
 let abstract_value (v : S_cek.value) : D.t =
   let next = ref input_site_base in
   let fresh_site () =
@@ -550,7 +566,8 @@ let read_result (h : handle) (sigma : state) : D.t =
     (fun (phi, _) (e : entry) acc ->
       if List.exists (fun el -> compare_kelem el KEmpty = 0) e.kont then
         match S_syntax.cmd_at h.prog (Partition.lab phi) with
-        | S_syntax.Return a -> D.join acc (abs_atom e.rho a)
+        | S_syntax.Return a -> (
+            match abs_exp e.rho a with Some v -> D.join acc v | None -> acc)
         | _ -> acc
       else acc)
     sigma D.bottom
@@ -570,6 +587,17 @@ let analyze_t ?(arg : D.t = D.int_lit 0)
     (p : T_encoding.program) : analysis =
   analyze ~arg (T_encoding.enc_program p)
 
+let analyze_prog (prog : S_syntax.program) : state =
+  let h = handle_for_program prog in
+  let phi0 = partition_of h prog.S_syntax.main aenv_empty in
+  let init =
+    Table.add (phi0, kont_halt) { rho = aenv_empty; kont = kont_halt } state_empty
+  in
+  solve h init
+
+let prog_result (prog : S_syntax.program) (sigma : state) : D.t =
+  read_result (handle_for_program prog) sigma
+
 let table_size (sigma : state) : int = Table.cardinal sigma
 
 let partitions (sigma : state) : Partition.Set.t =
@@ -586,5 +614,5 @@ let has_partition_with_t_label (sigma : state) ~(s_label : Label.t)
 
 end
 
-(* default instantiation: the concrete RTG value domain *)
+(** Default instantiation: the concrete RTG value domain, re-exported at the {!S_abstract} top level. *)
 include Make (Domain_rtg)

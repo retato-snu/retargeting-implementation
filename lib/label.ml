@@ -1,4 +1,7 @@
-(** Program labels and the label-indexed control map. *)
+(** Program labels and the label-indexed control map.
+
+    Labels are integers (reference [Label.L int] style). Interpreter points are
+    extracted structurally, never by hardcoded numbers. *)
 
 type t = int
 
