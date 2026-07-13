@@ -1,6 +1,23 @@
+; One library, organized by the stage of the construction each module belongs to:
+;
+;   s/           the source language S — the language an analyzer already exists
+;                for: syntax, parser, and the concrete CEK machine
+;   t/           the target language T — the language we want an analyzer for:
+;                syntax, parser, the encoding of T entities as S values, and T's
+;                concrete machine (the oracle)
+;   interp_st.ml I_S^T — T's interpreter written as an S program. The centre of
+;                the construction: running the S analyzer on it yields the base
+;                analyzer for T
+;   domain/      the value domains the analyzer is a functor over
+;   analysis/    the generic S abstract interpreter (the base analyzer) and the
+;                retargeting that recovers T's machine structure from it
+;   specialize/  the specialized analyzer — the base analyzer partially
+;                evaluated with respect to the interpreter text
+;
+; [include_subdirs unqualified] keeps the module names flat (S_abstract,
+; Calc_pe, ...), so the directories document the construction without changing
+; any name a consumer refers to.
+(include_subdirs unqualified)
+
 (library
  (name retargeting))
-
-(ocamllex t_lexer s_lexer)
-
-(ocamlyacc t_grammar s_grammar)

@@ -1,0 +1,6 @@
+; The stored specialized analyzer: generated_calc.ml is emitted as code by
+; staging/calc_stage.ml and checked in, carrying its own [@@@warning "-a"]
+; (machine-written source). gen_calc.ml holds the drivers that run it.
+(library
+ (name retargeting_gen)
+ (libraries retargeting))

@@ -1,0 +1,5 @@
+; The MetaOCaml staging program under staging/ references the BER runtime
+; modules (Codelib), which dune's ocamldep cannot resolve; it is compiled
+; separately by metaocamlc (scripts/run-gen-calc.sh). Exclude it from the
+; normal dune build.
+(dirs :standard \ staging)

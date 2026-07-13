@@ -1,14 +1,9 @@
-.env
-
 # OCaml / dune build artifacts.
 _build/
 *.install
 *.merlin
 .merlin
 
-# Local link to the separate Overleaf Git repository.
-/paper
-
-# Experiment outputs and generated local artifacts.
+# Measurement outputs (scripts/reproduce-table.sh, scripts/kick-tires.sh).
 outputs/
 *.log

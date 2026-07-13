@@ -1,0 +1,19 @@
+(executable
+ (name main)
+ (modules main)
+ (libraries retargeting retargeting_gen))
+
+; The paper-table measurement harness (tab:impl-measure): the base analyzer
+; vs. the stored specialized analyzer (summary / denotations) on the native
+; benchmark suite. Standalone, NOT wired into `dune test`; run via
+; scripts/reproduce-table.sh or `dune exec bin/bench_paper.exe`.
+(executable
+ (name bench_paper)
+ (modules bench_paper)
+ (libraries retargeting retargeting_gen unix))
+
+; Aggregates bench_paper replicate TSVs into the paper table (per-cell
+; median of replicate medians, speedups, geometric means).
+(executable
+ (name paper_table)
+ (modules paper_table))
