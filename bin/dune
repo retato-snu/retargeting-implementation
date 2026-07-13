@@ -17,3 +17,11 @@
 (executable
  (name paper_table)
  (modules paper_table))
+
+; Prints the rule set the specializer derives from the interpreter text -- the
+; paper's factorization table -- and the per-frame context bindings beside it.
+; Standalone; run via `dune exec bin/calc_rules.exe`.
+(executable
+ (name calc_rules)
+ (modules calc_rules)
+ (libraries retargeting))

@@ -18,8 +18,7 @@
     This module is the first-class form of the field-role table that the
     auxiliary-family certificate {!Role_pe} recovers structurally from the
     interpreter text ({!Role_pe.fields_of_tag}); the two must agree tag for tag,
-    which the gate suite on the artifact/impl-measure branch checks.
-    {!Domain_dis} consumes it. The shared
+    which [tests/test_calc_pe.ml] checks. {!Domain_dis} consumes it. The shared
     {!Domain_intf.DOMAIN} surface is unchanged — the role map is a parameter of
     the disambiguated domain only, so the base and tree-grammar lanes are
     untouched. *)

@@ -11,3 +11,5 @@ Documentation and recorded measurement data. Start from the repository-root
   `dune exec bin/paper_table.exe -- docs/data/bench-paper-rep*.tsv`.
   `archive-submitted/` holds the older replicates the submitted version of the
   paper's table was computed from, and a note on what changed since.
+- **the regression corpus** — `tests/corpus/`, the gate inputs. See the last
+  section of [benchmarks.md](benchmarks.md).

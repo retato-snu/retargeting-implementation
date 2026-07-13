@@ -1,0 +1,6 @@
+(test
+ (name test_main)
+ (libraries retargeting retargeting_gen)
+ (deps
+  (glob_files_rec corpus/*)
+  (glob_files_rec %{workspace_root}/programs/*)))

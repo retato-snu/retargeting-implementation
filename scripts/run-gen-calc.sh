@@ -5,8 +5,8 @@
 #
 # The specialized analyzer is emitted as code by staging/calc_stage.ml under the
 # BER MetaOCaml switch (metaocamlc); the result is plain OCaml, checked into
-# lib_gen/ and equality-tested against the in-process analyzer on the
-# artifact/impl-measure branch. BER is needed ONLY to regenerate.
+# lib_gen/ and tested in-process by the ordinary `dune test`
+# (tests/test_gen_calc.ml). BER is needed ONLY to regenerate.
 #
 # Usage:
 #   scripts/run-gen-calc.sh           regenerate lib_gen/generated_calc.ml

@@ -70,3 +70,13 @@ machine. It is the check that a re-run analyzed what the recorded run analyzed.
 **`rel`** compares each specialized lane's result against the base's, per
 program. It is `=` where they agree — which, with the analyzed auxiliary
 operators, is every program.
+
+## The regression corpus
+
+`tests/corpus/` is a separate thing: 32 `.s` and 65 `.t` programs, mostly small
+shapes, that exist to cross-check the interpreters and the analyzers against each
+other. They are gate inputs, not benchmarks, and none of them is reported. The
+gate suite sweeps them together with the fourteen programs above, so the
+equality it establishes — the specialized analyzer computes what the base
+computes — holds on exactly the programs the table measures, and on a good deal
+more.

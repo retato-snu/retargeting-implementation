@@ -9,8 +9,8 @@
      gpm/s-x  — "specialized, summary": the stored specialized analyzer
                 (lib_gen/generated_calc.ml, generated from
                 staging/calc_stage.ml), auxiliary operator = the analyzed
-                summary. Gated equal to the base at the cut points on the
-                artifact/impl-measure branch;
+                summary. Gated equal to the base at the cut points
+                (tests/test_corpus.ml, tests/test_gen_calc.ml);
      gpm/f-x  — "specialized, denotations": the stored specialized analyzer
                 with the auxiliary denotations substituted (sound, can
                 sharpen precision — strictly finer on church and fermat).

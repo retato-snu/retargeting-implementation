@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 #
-# kick-tires.sh — quick check (~2 min): build, run one benchmark through the
-# concrete oracle and the three measured analyzers, then one low-sample
-# replicate of the paper-table bench with its aggregation. Everything is
-# working if this ends with the (rough) table printed and "kick-tires: OK".
+# kick-tires.sh — quick check (~2-3 min): build, run one benchmark's concrete
+# oracle, then a single low-sample replicate of the paper-table bench with its
+# aggregation. Everything is working if this ends with the (rough) table printed
+# and "kick-tires: OK".
+#
+# The full gate suite is `dune test` (README.md; ~15 min).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -11,12 +13,8 @@ echo "== build =="
 dune build --root .
 
 echo
-echo "== gcd (arg=21) through all four lanes; all three analyses must contain 3 =="
-P="$(grep -v '^ *#' programs/fx2_gcd.t | tr '\n' ' ')"
-./_build/default/bin/main.exe interp   "$P" --arg 21
-./_build/default/bin/main.exe analyze  "$P" --exact --arg 21
-./_build/default/bin/main.exe run-spec "$P" --aux summary     --arg 21
-./_build/default/bin/main.exe run-spec "$P" --aux denotations --arg 21
+echo "== one faithful port vs. the concrete oracle =="
+scripts/check-programs.sh programs/fx2_gcd.t
 
 echo
 echo "== paper-table bench, 1 replicate x 3 samples (rough) =="
